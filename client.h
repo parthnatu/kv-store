@@ -9,7 +9,8 @@
 
 #include <stdint.h>
 #include <cstddef>
-
+//#include <iostream>
+//using namespace std;
 struct Server_info{
     char ip[16]; // IP Sample: "192.168.1.2"
     uint16_t port;
@@ -19,7 +20,7 @@ struct Server_info{
 struct Client{
     uint32_t id;
     char protocol[4]; // ABD or CM
-    struct Server_info* servers; // An array containing the infromation to access each server
+    const struct Server_info* servers; // An array containing the infromation to access each server
     uint32_t number_of_servers; // Number of elements in the array servers
 };
 
@@ -60,7 +61,22 @@ int client_delete(struct Client* c);
 #endif //PROJECT1_CLIENT_H
 
 struct Client* client_instance(const uint32_t id, const char* protocol, const struct Server_info* servers, uint32_t number_of_servers){
-  return NULL;
+  Client* client = new Client();
+  client->id = id;
+  if(protocol == "ABD"){
+    for(int i=0;i<3;i++)
+      client->protocol[i] = protocol[i];
+    client->protocol[3] = '\0';
+  }
+  else{
+    for(int i=0;i<2;i++)
+      client->protocol[i] = protocol[i];
+    client->protocol[2] = '\0';
+  }
+  client->servers = servers;
+  client->number_of_servers = number_of_servers;
+  //  cout << "initialized " << client->protocol << " client\n";
+  return client;
 }
 
 int put(const struct Client* c, const char* key, uint32_t key_size, const char* value, uint32_t value_size){
@@ -72,5 +88,6 @@ int get(const struct Client* c, const char* key, uint32_t key_size, char** value
 }
 
 int client_delete(struct Client* c){
+  delete c;
   return 0;
 }
