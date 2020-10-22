@@ -1,60 +1,33 @@
-#
-# Copyright 2015 gRPC authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
-
-HOST_SYSTEM = $(shell uname | cut -f 1 -d_)
-SYSTEM ?= $(HOST_SYSTEM)
 CXX = g++
-CPPFLAGS += `pkg-config --cflags protobuf grpc`
-CXXFLAGS += -std=c++11
-ifeq ($(SYSTEM),Darwin)
-LDFLAGS += -L/usr/local/lib `pkg-config --libs protobuf grpc++`\
-           -pthread\
-           -lgrpc++_reflection\
-           -ldl
-else
-LDFLAGS += -L/usr/local/lib `pkg-config --libs protobuf grpc++`\
-           -pthread\
-           -Wl,--no-as-needed -lgrpc++_reflection -Wl,--as-needed\
-           -ldl
-endif
-PROTOC = protoc
-GRPC_CPP_PLUGIN = grpc_cpp_plugin
-GRPC_CPP_PLUGIN_PATH ?= `which $(GRPC_CPP_PLUGIN)`
+CXXFLAGS =-Wall -std=c++11 -Iinc -g `pkg-config --cflags protobuf grpc`
+LDFLAGS = -L/usr/local/lib -lm -ldl -lpthread `pkg-config --libs protobuf grpc++` -Wl,--no-as-needed -lgrpc++_reflection -Wl,--as-needed
 
-PROTOS_PATH = ./protos
+# All the cpp file in the directory should be compiled
+src = $(wildcard *.cpp)
+obj = $(patsubst %.cpp, obj/%.o, $(src)) # Each cpp file will trun into an object file in the obj folder
 
-vpath %.proto $(PROTOS_PATH)
+obj2 = $(filter-out obj/userprogram.o,  $(obj)) # Object files required for the server application. It contains all the object files except the object file of userprogram which should be used for client
+obj1 = $(filter-out obj/server.o, $(obj)) # Object files for userprogram application. Please note that Client application created by this Makefile will be the one that runs the main function in the userprogram object file
 
-all: server client userprogram
+.PHONY: all
+all: obj Client Server
 
-server: kvmsg.pb.o kvmsg.grpc.pb.o server.o
-	$(CXX) $^ $(LDFLAGS) -o $@
+client : obj Client
+Client: $(obj1)
+	$(CXX) -o $@ $^ $(LDFLAGS) # Link object files and create the client application
 
-client: kvmsg.pb.o kvmsg.grpc.pb.o client.o client.h
-	$(CXX) $^ $(LDFLAGS) -o $@
-userprogram: userprogram.o
-	$(CXX) $^ $(LDFLAGS) -o $@
+server: obj Server
+Server: $(obj2)
+	$(CXX) -o $@ $^ $(LDFLAGS) # Link object files and create the server application
 
-.PRECIOUS: %.grpc.pb.cc
-%.grpc.pb.cc: %.proto
-	$(PROTOC) -I $(PROTOS_PATH) --grpc_out=. --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN_PATH) $<
+obj:
+	mkdir obj # Create a folder for the object files
 
-.PRECIOUS: %.pb.cc
-%.pb.cc: %.proto
-	$(PROTOC) -I $(PROTOS_PATH) --cpp_out=. $<
+# Compile the code and create object files
+$(obj): obj/%.o: %.cpp
+	$(CXX) -c $(CXXFLAGS) $< -o $@
 
+.PHONY: clean
 clean:
-	rm -f *.o *.pb.cc *.pb.h server client userprogram
+	rm -rf obj Client Server
+

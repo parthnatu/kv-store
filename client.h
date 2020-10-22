@@ -8,7 +8,7 @@
 #define PROJECT1_CLIENT_H
 
 #include <stdint.h>
-
+#include <cstddef>
 
 struct Server_info{
     char ip[16]; // IP Sample: "192.168.1.2"
@@ -58,3 +58,19 @@ int get(const struct Client* c, const char* key, uint32_t key_size, char** value
 int client_delete(struct Client* c);
 
 #endif //PROJECT1_CLIENT_H
+
+struct Client* client_instance(const uint32_t id, const char* protocol, const struct Server_info* servers, uint32_t number_of_servers){
+  return NULL;
+}
+
+int put(const struct Client* c, const char* key, uint32_t key_size, const char* value, uint32_t value_size){
+  return 0;
+}
+
+int get(const struct Client* c, const char* key, uint32_t key_size, char** value, uint32_t *value_size){
+  return 0;
+}
+
+int client_delete(struct Client* c){
+  return 0;
+}
