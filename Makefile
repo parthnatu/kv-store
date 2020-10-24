@@ -2,6 +2,13 @@ CXX = g++
 CXXFLAGS =-Wall -std=c++11 -Iinc -g `pkg-config --cflags protobuf grpc`
 LDFLAGS = -L/usr/local/lib -lm -ldl -lpthread `pkg-config --libs protobuf grpc++` -Wl,--no-as-needed -lgrpc++_reflection -Wl,--as-needed
 
+PROTOC = protoc
+GRPC_CPP_PLUGIN = grpc_cpp_plugin
+GRPC_CPP_PLUGIN_PATH ?= `which $(GRPC_CPP_PLUGIN)`
+
+PROTOS_PATH = ./protos
+vpath %.proto $(PROTOS_PATH)
+
 # All the cpp file in the directory should be compiled
 src = $(wildcard *.cpp)
 obj = $(patsubst %.cpp, obj/%.o, $(src)) # Each cpp file will trun into an object file in the obj folder
@@ -13,11 +20,11 @@ obj1 = $(filter-out obj/server.o, $(obj)) # Object files for userprogram applica
 all: obj Client Server
 
 client : obj Client
-Client: $(obj1)
+Client: $(obj1) kvmsg.pb.o kvmsg.grpc.pb.o
 	$(CXX) -o $@ $^ $(LDFLAGS) # Link object files and create the client application
 
 server: obj Server
-Server: $(obj2)
+Server: $(obj2) kvmsg.pb.o kvmsg.grpc.pb.o
 	$(CXX) -o $@ $^ $(LDFLAGS) # Link object files and create the server application
 
 obj:
@@ -27,7 +34,14 @@ obj:
 $(obj): obj/%.o: %.cpp
 	$(CXX) -c $(CXXFLAGS) $< -o $@
 
+.PRECIOUS: %.grpc.pb.cc
+%.grpc.pb.cc: %.proto
+	$(PROTOC) -I $(PROTOS_PATH) --grpc_out=. --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN_PATH) $<
+
+.PRECIOUS: %.pb.cc
+%.pb.cc: %.proto
+	$(PROTOC) -I $(PROTOS_PATH) --cpp_out=. $<
+
 .PHONY: clean
 clean:
-	rm -rf obj Client Server
-
+	rm -rf *.o *.pb.cc *.pb.h obj Client Server
