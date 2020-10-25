@@ -5,6 +5,8 @@
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
+#include <map>
+#include <utility>
 
 #include "kvmsg.grpc.pb.h"
 
@@ -17,10 +19,12 @@ using kvstore::ReadRequest;
 using kvstore::ReadReply;
 using kvstore::WriteRequest;
 using kvstore::WriteReply;
-using kvstore::KVServer;
+using kvstore::KVStore;
+
+map<string, pair<string, int>> store;
 
 // Logic and data behind the server's behavior.
-class KVServerImpl final : public KVServer::Service {
+class KVServerImpl final : public KVStore::Service {
   Status read(ServerContext* context, const ReadRequest* request,
                   ReadReply* reply) override {
     //std::string prefix("Hello ");

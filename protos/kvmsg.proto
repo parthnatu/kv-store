@@ -16,7 +16,7 @@ syntax = "proto3";
 
 package kvstore;
 // The greeting service definition.
-service KVServer {
+service KVStore {
   // Sends a greeting
   rpc read (ReadRequest) returns (ReadReply) {}
   rpc write (WriteRequest) returns (WriteReply) {}
@@ -26,7 +26,6 @@ service KVServer {
 // The response message containing the greetings
 message ReadRequest {
   uint32 client_id = 1;
-  uint32 timestamp = 2;
   string key = 3;
 }
 

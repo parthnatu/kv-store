@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 #include <cstddef>
+#include "kvmsg.grpc.pb.h"
 //#include <iostream>
 //using namespace std;
 struct Server_info{
@@ -24,6 +25,81 @@ struct Client{
     uint32_t number_of_servers; // Number of elements in the array servers
 };
 
+using grpc::ChannelInterface;
+using grpc::ClientContext;
+using grpc::Status;
+using kvstore::ReadRequest;
+using kvstore::ReadReply;
+using kvstore::WriteRequest;
+using kvstore::WriteReply;
+using kvstore::KVStore;
+
+class KVClient {
+ public:
+  KVClient(std::shared_ptr<ChannelInterface> channel)
+      : stub_(KVStore::NewStub(channel)) {}
+
+  // Assembles the client's payload, sends it and presents the response back
+  // from the server.
+  std::string read(const std::string& key, const int client_id) {
+    // Data we are sending to the server.
+    ReadRequest request;
+    request.set_key(key);
+    request.set_client_id(client_id);
+
+    // Container for the data we expect from the server.
+    ReadReply reply;
+
+    // Context for the client. It could be used to convey extra information to
+    // the server and/or tweak certain RPC behaviors.
+    ClientContext context;
+
+    // The actual RPC.
+    Status status = stub_->read(&context, (ReadRequest&)request, &reply);
+
+    // Act upon its status.
+    if (status.ok()) {
+      // write read logic here
+      return "";
+    } else {
+      std::cout << status.error_code() << ": " << status.error_message()
+                << std::endl;
+      return "RPC failed";
+    }
+  }
+
+  int write(const std::string& key, const std::string& value, const int client_id, const int timestamp) {
+    // Data we are sending to the server.
+    WriteRequest request;
+    request.set_key(key);
+    request.set_client_id(client_id);
+    request.set_value(value);
+    request.set_timestamp(timestamp);
+
+    // Container for the data we expect from the server.
+    WriteReply reply;
+
+    // Context for the client. It could be used to convey extra information to
+    // the server and/or tweak certain RPC behaviors.
+    ClientContext context;
+
+    // The actual RPC.
+    Status status = stub_->write(&context, (WriteRequest&)request, &reply);
+
+    // Act upon its status.
+    if (status.ok()) {
+      // write logic here
+      return 0;
+    } else {
+      std::cout << status.error_code() << ": " << status.error_message()
+                << std::endl;
+      return -1;
+    }
+  }
+
+ private:
+  std::unique_ptr<KVStore::Stub> stub_;
+};
 
 /* This function will instantiate a client and initialize all the necessary variables.
  * id is the id of the client. class_name can be "ABD" or "CM" indicating the type of the client.
