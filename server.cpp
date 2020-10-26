@@ -40,8 +40,7 @@ class KVServerImpl final : public KVStore::Service {
   }
 };
 
-void RunServer() {
-  std::string server_address("0.0.0.0:50051");
+void RunServer(string &server_address) {
   KVServerImpl service;
 
   grpc::EnableDefaultHealthCheckService(true);
@@ -62,7 +61,16 @@ void RunServer() {
 }
 
 
-int main(){
-  RunServer();
-  return 0;
+int main(int argc, char *argv[]){
+	if (argc != 2) {
+		fprintf(stderr, "%s%s%s\n", "Error\n"
+		"Usage: ", argv[0], " <ip:port>\n\n"
+		"Please note to run the servers first\n");
+                return -1;
+        } 
+
+	std::string serverAddress = std::string(argv[1]);
+	RunServer(serverAddress);
+
+	return 0;
 }
