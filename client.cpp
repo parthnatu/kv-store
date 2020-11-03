@@ -21,33 +21,50 @@ using kvstore::ReadRequest;
 using kvstore::ReadReply;
 using kvstore::WriteRequest;
 using kvstore::WriteReply;
+using kvstore::TagRequest;
+using kvstore::TagReply;
 using kvstore::KVStore;
 
 class KVClient
 {
-	public:
-		KVClient(std::shared_ptr<ChannelInterface> channel): stub_(KVStore::NewStub(channel)) {}
+public:
+	KVClient(std::shared_ptr<ChannelInterface> channel): stub_(KVStore::NewStub(channel)) {}
 
-	// Assembles the client's payload, sends it and presents the response back
-	// from the server.
-	std::string read(const std::string &key, const int client_id)
+	uint32_t gettag(const string &key, const int client_id)
 	{
-		// Data we are sending to the server.
+		TagRequest request;
+		request.set_client_id(client_id);
+
+		TagReply reply;
+
+		ClientContext context;
+
+		Status status = stub_->gettag(&context, (TagRequest &) request, &reply);
+
+		if (status.ok())
+		{
+			return reply.tag();
+		}
+		else
+		{
+			std::cout << status.error_code() << ": " << status.error_message() <<
+				std::endl;
+			return 0;
+		}
+	}
+
+	string read(const string &key, const int client_id)
+	{
 		ReadRequest request;
 		request.set_key(key);
 		request.set_client_id(client_id);
 
-		// Container for the data we expect from the server.
 		ReadReply reply;
 
-		// Context for the client. It could be used to convey extra information to
-		// the server and/or tweak certain RPC behaviors.
 		ClientContext context;
 
-		// The actual RPC.
 		Status status = stub_->read(&context, (ReadRequest &) request, &reply);
 
-		// Act upon its status.
 		if (status.ok())
 		{
 			// write read logic here
@@ -61,7 +78,7 @@ class KVClient
 		}
 	}
 
-	int write(const std::string &key, const std::string &value, const int client_id, const int timestamp)
+	int write(const string &key, const string &value, const int client_id, const int timestamp)
 	{
 		// Data we are sending to the server.
 		WriteRequest request;
@@ -116,22 +133,21 @@ struct Client* client_instance(const uint32_t id, const char *protocol, const st
 	}
 	client->servers = servers;
 	client->number_of_servers = number_of_servers;
-	//  cout << "initialized " << client->protocol << " client\n";
+	cout << "initialized " << client->protocol << " client\n";
 	return client;
 }
 
 int put(const struct Client *c, const char *key, uint32_t key_size, const char *value, uint32_t value_size)
 {
-	std::string _key = std::string(key);
-	std::string _value = std::string(value);
+	string _key = string(key);
+	string _value = string(value);
 
 	for (uint32_t i=0; i < c->number_of_servers; i++) {
-		std::string serverIP = std::string(c->servers[i].ip);
+		string serverIP = string(c->servers[i].ip);
 		KVClient client = KVClient(
 			grpc::CreateChannel(serverIP, grpc::InsecureChannelCredentials())
 		);
-		const auto p1 = std::chrono::system_clock::now();
-		int timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(p1.time_since_epoch()).count();
+
 		// client->write(key, value, c->id, timestamp);
 	}
 	return 0;
