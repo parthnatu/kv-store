@@ -36,7 +36,7 @@ struct ValueWithtag {
 
 map<string, ValueWithtag> local_db;
 uint32_t tag = 1;
-pthread_mutex_t global_lock;
+pthread_mutex_t global_lock, tag_lock;
 
 class KVServerImpl final: public KVStore::Service
 {
@@ -59,6 +59,7 @@ public:
 			TagReply *reply) override
 	{
 		reply->set_tag(tag);
+		cout << "gettag:: sending tag " << tag << " to client " << request->client_id() << endl;
 		return Status::OK;
 	}
 
@@ -71,9 +72,9 @@ public:
 		if (it != local_db.end())
 		{
 			string value = it->second.value;
-			uint32_t tag = it->second.tag;
+			uint32_t localTag = it->second.tag;
 			reply->set_value(value);
-			reply->set_timestamp(tag);
+			reply->set_timestamp(localTag);
 			return Status::OK;
 		}
 		else 
@@ -90,7 +91,10 @@ public:
 		string key = request->key();
 		string value = request->value();
 		uint32_t clientId = request->client_id();
-		uint32_t tag = request->timestamp();
+		uint32_t clientTag = request->timestamp();
+
+		cout << "write:: request from client " << clientId;
+		cout << " " << key << "," << clientTag << "\n";
 
 		auto it = local_db.find(key);
 		
@@ -99,30 +103,37 @@ public:
 			pthread_mutex_lock(&global_lock);
 			it = local_db.find(key);
 			if (it == local_db.end()) {
-				tag++;
 				pthread_mutex_t lock;
-				ValueWithtag vtag(value, tag, clientId, lock);
+				pthread_mutex_init(&lock, NULL);
+				ValueWithtag vtag(value, 0, 100, lock);	// random
 				local_db.insert({key, vtag});
 			}
 			pthread_mutex_unlock(&global_lock);
-			reply->set_ack(1);
-			return Status::OK;
 		}
 
-		bool allow_write = break_tie(it->second.tag, it->second.fromClientId, tag, clientId);
+		cout << "write:: client << " << clientId << " existence check done\n";
+
+		it = local_db.find(key);
+
+		bool allow_write = break_tie(it->second.tag, it->second.fromClientId, clientTag, clientId);
 		if (allow_write) 
 		{
+			cout << "write:: client << " << clientId << " allow write check1\n";
 			pthread_mutex_lock(&it->second.lock);
-			// it = local_db.find(key);   // we may not need this
-			allow_write = break_tie(it->second.tag, it->second.fromClientId, tag, clientId);
+			allow_write = break_tie(it->second.tag, it->second.fromClientId, clientTag, clientId);
+			cout << "write:: client << " << clientId << " allow write check2 is " << allow_write << endl;
 			if (allow_write) {
 				it->second.value = value;
 				it->second.fromClientId = clientId;
-				it->second.tag = tag;
+				it->second.tag = clientTag;
+				pthread_mutex_lock(&tag_lock);
+				tag = max(tag, clientTag) + 1;
+				pthread_mutex_unlock(&tag_lock);
 			}
 			pthread_mutex_unlock(&it->second.lock);
 		}
 
+		cout << "write:: send ack to client " << clientId << endl;
 		reply->set_ack(1);
 
 		return Status::OK;
