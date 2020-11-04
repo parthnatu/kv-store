@@ -1,5 +1,4 @@
 #include "client.h"
-#include <ctime>
 #include <thread>
 #include <future>
 #include <queue>
@@ -37,12 +36,12 @@ struct valueWithTag {
 };
 
 
-class KVClient
+class KVServerChannel
 {
 public:
-	KVClient(std::shared_ptr<Channel> channel): stub_(KVStore::NewStub(channel)) {}
+	KVServerChannel(std::shared_ptr<Channel> channel): stub_(KVStore::NewStub(channel)) {}
 
-	uint32_t gettag(const uint32_t client_id)
+	uint32_t getServerTag(const uint32_t client_id)
 	{
 		TagRequest request;
 		request.set_client_id(client_id);
@@ -50,17 +49,12 @@ public:
 		TagReply reply;
 
 		ClientContext context;
+		Status status = stub_->getServerTag(&context, (TagRequest &) request, &reply);
 
-		Status status = stub_->gettag(&context, (TagRequest &) request, &reply);
-
-		if (status.ok())
-		{
+		if (status.ok()) {
 			return reply.tag();
-		}
-		else
-		{
-			std::cout << status.error_code() << ": " << status.error_message() <<
-				std::endl;
+		} else {
+			std::cout << status.error_code() << ": " << status.error_message() << std::endl;
 			return 0;
 		}
 	}
@@ -74,51 +68,33 @@ public:
 		ReadReply reply;
 
 		ClientContext context;
-
 		Status status = stub_->read(&context, (ReadRequest &) request, &reply);
 
-		if (status.ok())
-		{
+		if (status.ok()) {
 			return valueWithTag(reply.value(), reply.timestamp());
-		}
-		else
-		{
-			std::cout << status.error_code() << ": " << status.error_message() <<
-				std::endl;
-			string error = "RPC failed";
-			return valueWithTag(error, 0);
+		} else {
+			std::cout << status.error_code() << ": " << status.error_message() << std::endl;
+			return valueWithTag(string("RPC failed"), 0);
 		}
 	}
 
 	int write(const string &key, const string &value, const uint32_t client_id, const uint32_t timestamp)
 	{
-		// Data we are sending to the server.
 		WriteRequest request;
 		request.set_key(key);
 		request.set_client_id(client_id);
 		request.set_value(value);
 		request.set_timestamp(timestamp);
 
-		// Container for the data we expect from the server.
 		WriteReply reply;
 
-		// Context for the client. It could be used to convey extra information to
-		// the server and/or tweak certain RPC behaviors.
 		ClientContext context;
-
-		// The actual RPC.
 		Status status = stub_->write(&context, (WriteRequest &) request, &reply);
 
-		// Act upon its status.
-		if (status.ok())
-		{
-			// write logic here
+		if (status.ok()) {
 			return 0;
-		}
-		else
-		{
-			std::cout << status.error_code() << ": " << status.error_message() <<
-				std::endl;
+		} else {
+			std::cout << status.error_code() << ": " << status.error_message() << std::endl;
 			return -1;
 		}
 	}
@@ -138,52 +114,74 @@ bool is_ready(std::future<R> const &f) {
 }
 
 
-KVClient* getKVClient(string serverAddr) {
-	cout << "\tgetKVClient:: create channel to server " << serverAddr << endl;
-	KVClient *client = new KVClient(
+/*
+ * helper functions functions - protocol independent
+ */
+
+KVServerChannel* getKVServerChannel(string serverAddr) {
+	KVServerChannel *client = new KVServerChannel(
 		grpc::CreateChannel(serverAddr, grpc::InsecureChannelCredentials())
 	);
 	return client;
 }
 
-
-vector<KVClient*> getKVClientsAsync(const struct Client *c) {
-	vector<KVClient*> clients;
+vector<KVServerChannel*> getKVServerChannelsAsync(const struct Client *c) {
+	vector<KVServerChannel*> clients;
 
 	// create clients async
-	vector<std::future<KVClient*>> create_futures;
+	vector<std::future<KVServerChannel*>> futures;
 	for (uint32_t i = 0; i<c->number_of_servers; i++) {
 		string serverAddr = getServerAddr(c->servers[i].ip, to_string(c->servers[i].port));
-		std::future<KVClient*> create_future = std::async(std::launch::async, getKVClient, serverAddr);
-		create_futures.push_back(std::move(create_future));
+		std::future<KVServerChannel*> fu = std::async(std::launch::async, getKVServerChannel, serverAddr);
+		futures.push_back(std::move(fu));
 	}
 
-	// get clients from future
 	for (uint32_t i = 0; i<c->number_of_servers; i++) {
-		KVClient* client = create_futures[i].get();
+		KVServerChannel* client = futures[i].get();
 		clients.push_back(client);
 	}
 
 	return clients;
 }
 
-
-void getTagFromServer(KVClient* channel, const uint32_t client_id, promise<uint32_t> &tag_promise) {
-	// cout << "\tgetTagFromServer:: Get tag for client " << client_id << endl;
-	uint32_t tag = channel->gettag(client_id);
+void getTagFromServer(KVServerChannel* channel, const uint32_t client_id, 
+			promise<uint32_t> &tag_promise) {
+	uint32_t tag = channel->getServerTag(client_id);
 	try {
 		tag_promise.set_value(tag);
-		// cout << "\t\tgetTagFromServer:: Promise kept by " << client_id << endl;
-	} catch (const std::future_error& e) {
-		// cout << "\t\tgetTagFromServer:: Promise is not longer needed from " << client_id << endl;
-	}
+	} catch (const std::future_error& e) {}
+}
+
+void writeToServer(KVServerChannel *channel, const string &key, const string &value, 
+			const uint32_t client_id, const uint32_t timestamp, promise<int> &write_promise) {
+	int status = channel->write(key, value, client_id, timestamp);
+
+	try {
+		write_promise.set_value(status);
+	} catch (const std::future_error& e) {}
+
+	return;
+}
+
+void readFromServer(KVServerChannel *channel, const string &key, const uint32_t client_id, 
+			promise<valueWithTag> &read_promise) {
+	valueWithTag reply = channel->read(key, client_id);
+
+	try {
+		read_promise.set_value(reply);
+	} catch (const std::future_error& e) {}
+
+	return;
 }
 
 
-uint32_t getHighestTagFromMajorityAsync(vector<KVClient*> &channels, const struct Client *c) {
+/*
+ * ABD functions
+ */
+
+uint32_t getTagFromMajorityAsync(vector<KVServerChannel*> &channels, const struct Client *c) {
 	int n_channels = (int)channels.size();
 
-	// create clients async
 	queue<std::promise<uint32_t>> tag_promises;
 	queue<std::future<uint32_t>> tag_futures;
 	for (int i = 0; i<n_channels; i++) {
@@ -196,7 +194,6 @@ uint32_t getHighestTagFromMajorityAsync(vector<KVClient*> &channels, const struc
 
 	uint32_t tag = 0;
 
-	// get clients from future
 	int n_majority = n_channels / 2 + 1;
 	int n_got = 0;
 	while (n_got < n_majority) {
@@ -212,16 +209,11 @@ uint32_t getHighestTagFromMajorityAsync(vector<KVClient*> &channels, const struc
 		}
 	}
 
-	// cout << "\tgetHighestTagFromMajorityAsync:: got tags from majority, dicarding other tags\n";
-
 	while (n_got < n_channels) {
 		std::future<uint32_t> fu = std::move(tag_futures.front()); tag_futures.pop();
 		std::promise<uint32_t> pr = std::move(tag_promises.front()); tag_promises.pop();
 		if (!is_ready(fu)) {
-			// cout << "\tgetHighestTagFromMajorityAsync:: set exception to this promise\n";
 			pr.set_exception(std::make_exception_ptr(std::runtime_error("No need")));
-		} else {
-			// cout << "\tgetHighestTagFromMajorityAsync:: promise fulfilled, but not needed\n";
 		}
 		fu.get();
 		n_got++;
@@ -230,46 +222,28 @@ uint32_t getHighestTagFromMajorityAsync(vector<KVClient*> &channels, const struc
 	return tag;
 }
 
-
-void writeToServer(KVClient *channel, const string &key, const string &value, 
-			const uint32_t client_id, const uint32_t timestamp, promise<void> &write_promise) {
-	int status = channel->write(key, value, client_id, timestamp);
-
-	if(status == 0){ // Success
-		cout << "writeToServer:: write succussful for client " << client_id << " , key " << key << endl;
-		write_promise.set_value();
-	}
-	else {
-		cerr << "writeToServer:: write failed with client " << client_id << " and key " << key << endl;
-		write_promise.set_value();
-	}
-
-	return;
-}
-
-
-bool writeToServersAsync(vector<KVClient*> &channels, const string &key, const string &value, 
+bool writeToServersAsync(vector<KVServerChannel*> &channels, const string &key, const string &value, 
 			const uint32_t client_id, const uint32_t timestamp) {
 	int n_channels = (int)channels.size();
 
-	queue<std::promise<void>> promises;
-	queue<std::future<void>> futures;
+	queue<promise<int>> promises;
+	queue<future<int>> futures;
+
 	for (int i = 0; i<n_channels; i++) {
-		std::promise<void> pr;
-		std::future<void> fu = pr.get_future();
-		std::async(std::launch::async, writeToServer, channels[i], key, value, client_id, timestamp, ref(pr));
+		promise<int> pr;
+		future<int> fu = pr.get_future();
+		async(std::launch::async, writeToServer, channels[i], key, value, client_id, timestamp, ref(pr));
 		promises.push(std::move(pr));
 		futures.push(std::move(fu));
 	}
 
-	// get clients from future
 	int n_majority = n_channels / 2 + 1;
 	int n_got = 0;
 	while (n_got < n_majority) {
-		std::future<void> fu = std::move(futures.front()); futures.pop();
-		std::promise<void> pr = std::move(promises.front()); promises.pop();
+		future<int> fu = std::move(futures.front()); futures.pop();
+		promise<int> pr = std::move(promises.front()); promises.pop();
 		if (is_ready(fu)) {
-			fu.get();
+			fu.get(); // assuming no failure
 			n_got++;
 		}
 		else {
@@ -278,46 +252,24 @@ bool writeToServersAsync(vector<KVClient*> &channels, const string &key, const s
 		}
 	}
 
-	cout << "writeToServersAsync:: client " << client_id << ":: got ack from majority, dicarding other ack\n";
-
-	while (n_got < n_channels) {
-		std::future<void> fu = std::move(futures.front()); futures.pop();
-		std::promise<void> pr = std::move(promises.front()); promises.pop();
+	while (n_got++ < n_channels) {
+		future<int> fu = std::move(futures.front()); futures.pop();
+		promise<int> pr = std::move(promises.front()); promises.pop();
 		if (!is_ready(fu)) {
-			cout << "\twriteToServersAsync:: client " << client_id << ":: set exception to this promise\n";
 			pr.set_exception(std::make_exception_ptr(std::runtime_error("No need")));
-		} else {
-			cout << "\twriteToServersAsync:: client " << client_id << ":: promise fulfilled, but not needed\n";
 		}
-		fu.get();
-		n_got++;
+		fu.get(); 
 	}
 
 	return true;
 }
 
-
-void readFromServer(KVClient *channel, const string &key, const uint32_t client_id, 
-			promise<valueWithTag> &read_promise) {
-	valueWithTag reply = channel->read(key, client_id);
-
-	if(reply.value.compare("RPC failed") != 0){ // Success
-		cout << "readFromServer:: read succussful for client " << client_id << " , key " << key << endl;
-		read_promise.set_value(reply);
-	}
-	else {
-		cerr << "readFromServer:: read failed with client " << client_id << " and key " << key << endl;
-	}
-
-	return;
-}
-
-
-string readFromServersAsync(vector<KVClient*> &channels, const string &key, const uint32_t client_id) {
+string readFromServersAsync(vector<KVServerChannel*> &channels, const string &key, const uint32_t client_id) {
 	int n_channels = (int)channels.size();
 
 	queue<std::promise<valueWithTag>> promises;
 	queue<std::future<valueWithTag>> futures;
+
 	for (int i = 0; i<n_channels; i++) {
 		std::promise<valueWithTag> pr;
 		std::future<valueWithTag> fu = pr.get_future();
@@ -329,7 +281,6 @@ string readFromServersAsync(vector<KVClient*> &channels, const string &key, cons
 	string value = "";
 	uint32_t highestTag = 0;
 
-	// get clients from future
 	int n_majority = n_channels / 2 + 1;
 	int n_got = 0;
 	while (n_got < n_majority) {
@@ -349,16 +300,11 @@ string readFromServersAsync(vector<KVClient*> &channels, const string &key, cons
 		}
 	}
 
-	cout << "readFromServersAsync:: client " << client_id << ":: got ack from majority, dicarding other ack\n";
-
 	while (n_got < n_channels) {
 		std::future<valueWithTag> fu = std::move(futures.front()); futures.pop();
 		std::promise<valueWithTag> pr = std::move(promises.front()); promises.pop();
 		if (!is_ready(fu)) {
-			cout << "\treadFromServersAsync:: client " << client_id << ":: set exception to this promise\n";
 			pr.set_exception(std::make_exception_ptr(std::runtime_error("No need")));
-		} else {
-			cout << "\treadFromServersAsync:: client " << client_id << ":: promise fulfilled, but not needed\n";
 		}
 		fu.get();
 		n_got++;
@@ -368,46 +314,41 @@ string readFromServersAsync(vector<KVClient*> &channels, const string &key, cons
 }
 
 
+/*
+ * Functions called by userprogram.cpp
+ */
+
 struct Client* client_instance(const uint32_t id, const char *protocol, const struct Server_info *servers, uint32_t number_of_servers)
 {
 	Client *client = new Client();
 	client->id = id;
-	if (strcmp(protocol,"ABD") == 0)
-	{
-		for (int i = 0; i < 3; i++)
-			client->protocol[i] = protocol[i];
+	if (strcmp(protocol,"ABD") == 0) {
+		for (int i = 0; i < 3; i++) client->protocol[i] = protocol[i];
 		client->protocol[3] = '\0';
 	}
-	else
-	{
-		for (int i = 0; i < 2; i++)
-			client->protocol[i] = protocol[i];
+	else {
+		for (int i = 0; i < 2; i++) client->protocol[i] = protocol[i];
 		client->protocol[2] = '\0';
 	}
 	client->servers = servers;
 	client->number_of_servers = number_of_servers;
-	cout << "client_instance:: initialized " << client->protocol << " client\n";
+
 	return client;
 }
 
 
 int put(const struct Client *c, const char *key, uint32_t key_size, const char *value, uint32_t value_size)
 {
-	cout << "put:: client " << c->id << endl;
+	vector<KVServerChannel*> channels = getKVServerChannelsAsync(c);
 
-	string _key = string(key);
-	string _value = string(value);
-	_value.pop_back(); // avoid the extra newline character
+	if (strcmp(c->protocol, "ABD") == 0) {
+		string _key = string(key);
+		string _value = string(value);
+		_value.pop_back(); // avoid the extra newline character
 
-	vector<KVClient*> channels = getKVClientsAsync(c);
-
-	int highestTag = getHighestTagFromMajorityAsync(channels, c);
-
-	cout << "put:: client " << c->id << " highest tag acquired from majority " << highestTag << endl;
-
-	writeToServersAsync(channels, _key, _value, c->id, highestTag + 1);
-
-	cout << "put:: client " << c->id << " complete" << endl;
+		int highestTag = getTagFromMajorityAsync(channels, c);
+		writeToServersAsync(channels, _key, _value, c->id, highestTag + 1);
+	}
 
 	return 0;
 }
@@ -415,18 +356,16 @@ int put(const struct Client *c, const char *key, uint32_t key_size, const char *
 
 int get(const struct Client *c, const char *key, uint32_t key_size, char **value, uint32_t *value_size)
 {
-	cout << "get:: client " << c->id << endl;
+	vector<KVServerChannel*> channels = getKVServerChannelsAsync(c);
+	
+	if (strcmp(c->protocol, "ABD") == 0) {
+		string valueStr = readFromServersAsync(channels, string(key), c->id);
 
-	string _key = string(key);
+		*value_size = valueStr.length();
 
-	vector<KVClient*> channels = getKVClientsAsync(c);
-
-	string valueStr = readFromServersAsync(channels, _key, c->id);
-
-	cout << valueStr << endl;
-
-	// *value_size = valueStr.length();
-	// valueStr.copy(*value, *value_size);
+		*value = new char[*value_size];
+		valueStr.copy(*value, *value_size);
+	}
 
 	return 0;
 }

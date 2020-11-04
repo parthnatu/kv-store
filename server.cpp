@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -35,31 +36,22 @@ struct ValueWithtag {
 };
 
 map<string, ValueWithtag> local_db;
-uint32_t tag = 1;
+uint32_t tag = 1;	// start server tag from 1
 pthread_mutex_t global_lock, tag_lock;
 
-class KVServerImpl final: public KVStore::Service
+class KVServerABDImpl final: public KVStore::Service
 {
 private:
-	bool break_tie(uint32_t &localTag, uint32_t &localId, 
+	inline bool break_tie(uint32_t &localTag, uint32_t &localId, 
 			uint32_t &clientTag, uint32_t &clientId) {
-		if (clientTag < localTag) {
-			return false;
-		}
-		else if (clientTag == localTag && clientId < localId) {
-			return false;
-		}
-		else {
-			return true;
-		}
+		return (localTag < clientTag || (localTag == clientTag && localId < clientId));
 	}
 
 public:
-	Status gettag(ServerContext *context, const TagRequest *request,
+	Status getServerTag(ServerContext *context, const TagRequest *request,
 			TagReply *reply) override
 	{
 		reply->set_tag(tag);
-		cout << "gettag:: sending tag " << tag << " to client " << request->client_id() << endl;
 		return Status::OK;
 	}
 
@@ -72,10 +64,10 @@ public:
 		if (it != local_db.end())
 		{
 			string value = it->second.value;
+			assert(value.length() == 64);
 			uint32_t localTag = it->second.tag;
 			reply->set_value(value);
 			reply->set_timestamp(localTag);
-			return Status::OK;
 		}
 		else 
 		{
@@ -90,97 +82,106 @@ public:
 	{
 		string key = request->key();
 		string value = request->value();
+		assert(value.length() == 64);
 		uint32_t clientId = request->client_id();
 		uint32_t clientTag = request->timestamp();
-
-		cout << "write:: request from client " << clientId;
-		cout << " " << key << "," << clientTag << "\n";
 
 		auto it = local_db.find(key);
 		
 		if (it == local_db.end()) 
 		{
 			pthread_mutex_lock(&global_lock);
+
 			it = local_db.find(key);
 			if (it == local_db.end()) {
 				pthread_mutex_t lock;
 				pthread_mutex_init(&lock, NULL);
+				
 				ValueWithtag vtag(value, 0, 100, lock);	// random
-				local_db.insert({key, vtag});
+				auto insert_res = local_db.insert({key, vtag});
+				
+				it = insert_res.first;
 			}
+			
 			pthread_mutex_unlock(&global_lock);
 		}
-
-		cout << "write:: client << " << clientId << " existence check done\n";
-
-		it = local_db.find(key);
 
 		bool allow_write = break_tie(it->second.tag, it->second.fromClientId, clientTag, clientId);
 		if (allow_write) 
 		{
-			cout << "write:: client << " << clientId << " allow write check1\n";
 			pthread_mutex_lock(&it->second.lock);
+			
 			allow_write = break_tie(it->second.tag, it->second.fromClientId, clientTag, clientId);
-			cout << "write:: client << " << clientId << " allow write check2 is " << allow_write << endl;
 			if (allow_write) {
 				it->second.value = value;
 				it->second.fromClientId = clientId;
 				it->second.tag = clientTag;
+				
+				// increament tag after write operation
 				pthread_mutex_lock(&tag_lock);
 				tag = max(tag, clientTag) + 1;
 				pthread_mutex_unlock(&tag_lock);
 			}
+			
 			pthread_mutex_unlock(&it->second.lock);
 		}
 
-		cout << "write:: send ack to client " << clientId << endl;
 		reply->set_ack(1);
 
 		return Status::OK;
 	}
 };
 
-void RunServer(string & server_address)
+void RunServer(string &server_address, string &protocol)
 {
 	if (pthread_mutex_init(&global_lock, NULL) != 0) {
 		cout << "\n mutex init has failed\n";
 		return;
 	}
 
-	KVServerImpl service;
-
 	grpc::EnableDefaultHealthCheckService(true);
 	grpc::reflection::InitProtoReflectionServerBuilderPlugin();
-	ServerBuilder builder;
-	builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
-	builder.RegisterService(&service);
-	std::unique_ptr<Server> server(builder.BuildAndStart());
-	std::cout << "Server listening on " << server_address << std::endl;
 
-	server->Wait();
+	if (protocol.compare("ABD") == 0) {
+		ServerBuilder builder;
+		builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
 
-	// destroy locks
-	for (auto it = local_db.begin(); it != local_db.end(); it++) {
-		pthread_mutex_destroy(&it->second.lock);
+		KVServerABDImpl service;
+		builder.RegisterService(&service);
+
+		std::unique_ptr<Server> server(builder.BuildAndStart());
+		std::cout << "Server listening on " << server_address << std::endl;
+
+		server->Wait();
+
+		// destroy locks
+		for (auto it = local_db.begin(); it != local_db.end(); it++) {
+			pthread_mutex_destroy(&it->second.lock);
+		}
+		pthread_mutex_destroy(&global_lock);
+
+		// clear local key-value database
+		local_db.clear();
 	}
-	pthread_mutex_destroy(&global_lock);
-
-	// clear local key-value database
-	local_db.clear();
+	else {
+		cout << "Protocol " << protocol << " not implemented\n";
+		return;
+	}
 }
 
 int main(int argc, char *argv[])
 {
-	if (argc != 2)
+	if (argc != 3)
 	{
 		fprintf(stderr, "%s%s%s\n", "Error\n"
-			"Usage: ", argv[0], "<ip:port>\n\n"
+			"Usage: ", argv[0], "<ip:port> <protocol>\n\n"
 			"Please note to run the servers first\n");
 		return -1;
 	}
 
 	std::string serverAddress = std::string(argv[1]);
-	RunServer(serverAddress);
+	std::string protocol = std::string(argv[2]);
+	RunServer(serverAddress, protocol);
 
 	return 0;
 }
