@@ -1,4 +1,3 @@
-#include <assert.h>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -64,7 +63,6 @@ public:
 		if (it != local_db.end())
 		{
 			string value = it->second.value;
-			assert(value.length() == 64);
 			uint32_t localTag = it->second.tag;
 			reply->set_value(value);
 			reply->set_timestamp(localTag);
@@ -82,7 +80,6 @@ public:
 	{
 		string key = request->key();
 		string value = request->value();
-		assert(value.length() == 64);
 		uint32_t clientId = request->client_id();
 		uint32_t clientTag = request->timestamp();
 
