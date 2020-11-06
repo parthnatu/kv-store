@@ -30,13 +30,13 @@ class KVClient
 
 	// Assembles the client's payload, sends it and presents the response back
 	// from the server.
-	std::string read(const std::string &key, const int client_id)
+  std::string read(const std::string &key, const int client_id, const std::string &protocol)
 	{
 		// Data we are sending to the server.
 		ReadRequest request;
 		request.set_key(key);
 		request.set_client_id(client_id);
-
+		request.set_prot(protocol);
 		// Container for the data we expect from the server.
 		ReadReply reply;
 
@@ -50,8 +50,7 @@ class KVClient
 		// Act upon its status.
 		if (status.ok())
 		{
-			// write read logic here
-			return "";
+		  return reply.value();
 		}
 		else
 		{
@@ -61,7 +60,7 @@ class KVClient
 		}
 	}
 
-	int write(const std::string &key, const std::string &value, const int client_id, const int timestamp)
+  int write(const std::string &key, const std::string &value, const int client_id, const int timestamp, const std::string &protocol)
 	{
 		// Data we are sending to the server.
 		WriteRequest request;
@@ -69,7 +68,8 @@ class KVClient
 		request.set_client_id(client_id);
 		request.set_value(value);
 		request.set_timestamp(timestamp);
-
+		request.set_prot(protocol);
+		cout << "inner write fn : value : " << value << "\n";
 		// Container for the data we expect from the server.
 		WriteReply reply;
 
@@ -122,9 +122,18 @@ struct Client* client_instance(const uint32_t id, const char *protocol, const st
 
 int put(const struct Client *c, const char *key, uint32_t key_size, const char *value, uint32_t value_size)
 {
+  cout << "running put\n";
 	std::string _key = std::string(key);
 	std::string _value = std::string(value);
-
+	_value.pop_back();
+	cout << "using key " << _key << " and value " << _value << "\n";
+	if(strcmp(c->protocol,"CM") == 0){
+	  std::string serverIP = string(c->servers[c->id].ip)+":"+to_string(c->servers[c->id].port);	  
+	  KVClient cmclient = KVClient(
+		 grpc::CreateChannel(serverIP, grpc::InsecureChannelCredentials())
+	  );
+	  cmclient.write(_key,_value,c->id,0,c->protocol);
+	}
 	for (uint32_t i=0; i < c->number_of_servers; i++) {
 		std::string serverIP = std::string(c->servers[i].ip);
 		KVClient client = KVClient(
@@ -139,7 +148,22 @@ int put(const struct Client *c, const char *key, uint32_t key_size, const char *
 
 int get(const struct Client *c, const char *key, uint32_t key_size, char **value, uint32_t *value_size)
 {
-	return 0;
+  cout << "running get\n";
+  cout << c->protocol << "\n";
+  if(strcmp(c->protocol,"CM") == 0 ){
+	  std::string serverIP = string(c->servers[c->id].ip)+":"+to_string(c->servers[c->id].port);
+	  cout << "on " << serverIP << "\n";
+	  KVClient cmclient = KVClient(
+		 grpc::CreateChannel(serverIP, grpc::InsecureChannelCredentials())
+	  );
+	  string _value = cmclient.read(string(key),c->id,c->protocol);
+	  cout << "got value : " << _value << "\n";
+	  *value_size = _value.length();
+	  *value = new char[*value_size];
+	  _value.copy(*value, *value_size);
+	  
+  }
+  return 0;
 }
 
 int client_delete(struct Client *c)

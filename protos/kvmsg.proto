@@ -59,9 +59,9 @@ message WriteReply {
 
 message CMRecRequest {
   uint32 id = 1;
-  uint32 timestamp = 2;
-  string key = 3;
-  string value = 4;
+  string key = 2;
+  string value = 3;
+  repeated uint32 timestamp = 4 [packed=true];
 }
 
 message CMRecReply {
