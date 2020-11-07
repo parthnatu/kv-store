@@ -15,32 +15,26 @@
 syntax = "proto3";
 
 package kvstore;
-// The greeting service definition.
+
 service KVStore {
-  // Sends a greeting
      	rpc read (ReadRequest) returns (ReadReply) {}
         rpc write (WriteRequest) returns (WriteReply) {}
+	rpc getServerTag (TagRequest) returns (TagReply) {}
 }
 
 service CM{
-	//rpc read(CMReadRequest) returns (CMReadReply) {}
-	//rpc write(CMWriteRequest) returns (CMWriteReply) {}
-	//rpc send(CMSendRequest) returns (CMWriteReply) {}
 	rpc receive(CMRecRequest) returns (CMRecReply) {}
 }
 
 
-// The response message containing the greetings
 message ReadRequest {
   uint32 client_id = 1;
   string key = 2;
-  string prot = 3;
 }
 
 message ReadReply {
-  uint32 client_id = 1;
-  uint32 timestamp = 2;
-  string value = 3;
+  uint32 timestamp = 1;
+  string value = 2;
 }
 
 message WriteRequest {
@@ -48,14 +42,19 @@ message WriteRequest {
   uint32 timestamp = 2;
   string key = 3;
   string value = 4;
-  string prot = 5;
 }
 
 message WriteReply {
-  uint32 client_id = 1;
   uint32 ack = 2;
 }
 
+message TagRequest {
+  uint32 client_id = 1;
+}
+
+message TagReply {
+  uint32 tag = 1;
+}
 
 message CMRecRequest {
   uint32 id = 1;

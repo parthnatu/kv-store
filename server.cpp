@@ -23,6 +23,8 @@ using kvstore::ReadRequest;
 using kvstore::ReadReply;
 using kvstore::WriteRequest;
 using kvstore::WriteReply;
+using kvstore::TagRequest;
+using kvstore::TagReply;
 using kvstore::KVStore;
 using kvstore::CM;
 using kvstore::CMRecRequest;
@@ -38,7 +40,17 @@ struct CMTuple{
   string key;
   string value; 
 };
+struct ValueWithtag {
+	string value;
+	uint32_t tag;
+	uint32_t fromClientId;
+	pthread_mutex_t lock;
 
+	ValueWithtag(string &_value, uint32_t _tag, uint32_t _fromClientId, pthread_mutex_t &_lock): 
+						value(_value), tag(_tag), fromClientId(_fromClientId), lock(_lock) {
+	}
+};
+string prot;
 uint32_t cm_self_index;
 uint32_t cm_N; // number of nodes
 map<string, pair<string, int>> abd_store;
@@ -48,7 +60,9 @@ vector<pair<string, string>> server_info;
 mutex mtx;
 queue<CMTuple*> inqueue;
 queue<CMTuple*> outqueue;
-
+map<string, ValueWithtag> local_db;
+uint32_t tag = 1;	// start server tag from 1
+pthread_mutex_t global_lock, tag_lock;
 static bool isBefore(CMTuple* ts1, CMTuple* ts2) {
         bool isBefore = false;
         for (int i = 0; i < cm_N; i++) {
@@ -76,7 +90,7 @@ class KVServerImpl final : public KVStore::Service {
 	}*/
   Status read(ServerContext* context, const ReadRequest* request,
                   ReadReply* reply) override {
-    string prot = (string)request->prot();
+
     if(prot == "CM"){
       mtx.lock();
       cout << "running read got lock too woohoo\n";
@@ -89,7 +103,6 @@ class KVServerImpl final : public KVStore::Service {
 
   Status write(ServerContext* context, const WriteRequest* request,
                   WriteReply* reply) override {
-    string prot = (string)request->prot();
     if(prot == "CM"){
       mtx.lock();
       cout << "running write from client " << request->client_id() << "got lock too woohoo\n";
@@ -119,6 +132,97 @@ class KVServerImpl final : public KVStore::Service {
     else{}
     return Status::OK;
   }
+};
+
+class KVServerABDImpl final: public KVStore::Service
+{
+private:
+	inline bool break_tie(uint32_t &localTag, uint32_t &localId, 
+			uint32_t &clientTag, uint32_t &clientId) {
+		return (localTag < clientTag || (localTag == clientTag && localId < clientId));
+	}
+
+public:
+	Status getServerTag(ServerContext *context, const TagRequest *request,
+			TagReply *reply) override
+	{
+		reply->set_tag(tag);
+		return Status::OK;
+	}
+
+	Status read(ServerContext *context, const ReadRequest *request,
+			ReadReply *reply) override
+	{
+		string key = request->key();
+
+		auto it = local_db.find(key);
+		if (it != local_db.end())
+		{
+			string value = it->second.value;
+			uint32_t localTag = it->second.tag;
+			reply->set_value(value);
+			reply->set_timestamp(localTag);
+		}
+		else 
+		{
+			reply->set_value("nil");
+			reply->set_timestamp(0);
+		}
+		return Status::OK;
+	}
+
+	Status write(ServerContext *context, const WriteRequest *request,
+			WriteReply *reply) override
+	{
+		string key = request->key();
+		string value = request->value();
+		uint32_t clientId = request->client_id();
+		uint32_t clientTag = request->timestamp();
+
+		auto it = local_db.find(key);
+		
+		if (it == local_db.end()) 
+		{
+			pthread_mutex_lock(&global_lock);
+
+			it = local_db.find(key);
+			if (it == local_db.end()) {
+				pthread_mutex_t lock;
+				pthread_mutex_init(&lock, NULL);
+				
+				ValueWithtag vtag(value, 0, 100, lock);	// random
+				auto insert_res = local_db.insert({key, vtag});
+				
+				it = insert_res.first;
+			}
+			
+			pthread_mutex_unlock(&global_lock);
+		}
+
+		bool allow_write = break_tie(it->second.tag, it->second.fromClientId, clientTag, clientId);
+		if (allow_write) 
+		{
+			pthread_mutex_lock(&it->second.lock);
+			
+			allow_write = break_tie(it->second.tag, it->second.fromClientId, clientTag, clientId);
+			if (allow_write) {
+				it->second.value = value;
+				it->second.fromClientId = clientId;
+				it->second.tag = clientTag;
+				
+				// increament tag after write operation
+				pthread_mutex_lock(&tag_lock);
+				tag = max(tag, clientTag) + 1;
+				pthread_mutex_unlock(&tag_lock);
+			}
+			
+			pthread_mutex_unlock(&it->second.lock);
+		}
+
+		reply->set_ack(1);
+
+		return Status::OK;
+	}
 };
 
 class CMImpl final : public CM::Service {
@@ -257,6 +361,10 @@ void RunServer(string &server_address, string protocol) {
   KVServerImpl kvservice;
   grpc::EnableDefaultHealthCheckService(true);
   grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+  if (pthread_mutex_init(&global_lock, NULL) != 0) {
+    cout << "\n mutex init has failed\n";
+    return;
+  }
   ServerBuilder builder;
   // Listen on the given address without any authentication mechanism.
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
@@ -268,11 +376,7 @@ void RunServer(string &server_address, string protocol) {
     CMImpl cmservice;
     builder.RegisterService(&cmservice);
     std::unique_ptr<Server> server(builder.BuildAndStart());
-  std::cout << "Server listening on " << server_address << std::endl;
-
-  // Wait for the server to shutdown. Note that some other thread must be
-  // responsible for shutting down the server for this call to ever return.
-  
+    std::cout << "Server listening on " << server_address << std::endl;
     for(int i=0;i<server_info.size();i++){
       ts_cm.push_back(0);
     }
@@ -282,39 +386,56 @@ void RunServer(string &server_address, string protocol) {
     apply_t.join();
     server->Wait();
   }
+  else{
+    ServerBuilder builder;
+    builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+
+    KVServerABDImpl service;
+    builder.RegisterService(&service);
+    std::unique_ptr<Server> server(builder.BuildAndStart());
+    std::cout << "Server listening on " << server_address << std::endl;
+    server->Wait();
+    // destroy locks
+    for (auto it = local_db.begin(); it != local_db.end(); it++) {
+      pthread_mutex_destroy(&it->second.lock);
+    }
+    pthread_mutex_destroy(&global_lock);
+    // clear local key-value database
+    local_db.clear();
+  }
 }
 
 
 
 int main(int argc, char *argv[]){
-  if (argc != 5) {
+  if (argc < 4) {
 		fprintf(stderr, "%s%s%s\n", "Error\n"
 		"Usage: ", argv[0], " <ip> <port> <protocol> <server_list.txt>\n\n"
 		"Please note to run the servers first\n");
                 return -1;
 		} 
   cout << argc << "\n";
-	std::string serverAddress = std::string(argv[1]);
-	std::string port = std::string(argv[2]);
-	std::string protocol = std::string(argv[3]);
-	if(protocol == "CM"){
-	  std::string inputfile = std::string(argv[4]);
-	  ifstream myfile(inputfile);
-	  string line;
-	  uint32_t index = 0;
-	  while (getline(myfile,line)){
-	    string _ip = line.substr(0,line.find(" "));
-	    string _port = line.substr(line.find(" ")+1,line.length());
-	    if(serverAddress.compare(_ip) == 0 && port.compare(_port) == 0)
-	      cm_self_index = index;
-	    index++;
-	    server_info.push_back(pair<string,string>(_ip,_port));
-	  }
-	  cout << "this is server number : " << cm_self_index << "\n";
-	  cm_N = index;
-	}
-	serverAddress = serverAddress+":"+port;
-	RunServer(serverAddress, protocol);
-
-	return 0;
+  std::string serverAddress = std::string(argv[1]);
+  std::string port = std::string(argv[2]);
+  std::string protocol = std::string(argv[3]);
+  prot = protocol;
+  if(protocol == "CM"){
+    std::string inputfile = std::string(argv[4]);
+    ifstream myfile(inputfile);
+    string line;
+    uint32_t index = 0;
+    while (getline(myfile,line)){
+      string _ip = line.substr(0,line.find(" "));
+      string _port = line.substr(line.find(" ")+1,line.length());
+      if(serverAddress.compare(_ip) == 0 && port.compare(_port) == 0)
+	cm_self_index = index;
+      index++;
+      server_info.push_back(pair<string,string>(_ip,_port));
+    }
+    cout << "this is server number : " << cm_self_index << "\n";
+    cm_N = index;
+  }
+  serverAddress = serverAddress+":"+port;
+  RunServer(serverAddress, protocol);
+  return 0;
 }
