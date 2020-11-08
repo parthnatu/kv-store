@@ -6,7 +6,7 @@ export MY_INSTALL_DIR=$HOME/.local
 
 mkdir -p $MY_INSTALL_DIR
 
-export PATH="$PATH:$MY_INSTALL_DIR/bin"
+export PATH="$PATH:$MY_INSTALL_DIR/bin" (protoc is here)
 
 sudo apt install -y cmake
 
