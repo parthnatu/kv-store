@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS =-Wall -std=c++11 -Iinc -g `pkg-config --cflags protobuf grpc`
+CXXFLAGS =-Wall -std=c++14 -Iinc -g `pkg-config --cflags protobuf grpc`
 LDFLAGS = -L/usr/local/lib -lm -ldl -lpthread `pkg-config --libs protobuf grpc++` -Wl,--no-as-needed -lgrpc++_reflection -Wl,--as-needed
 
 PROTOC = protoc

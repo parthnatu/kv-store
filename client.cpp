@@ -2,6 +2,7 @@
 #include <thread>
 #include <future>
 #include <queue>
+#include <mutex>
 
 #include <grpc/grpc.h>
 #include <grpcpp/channel.h>
@@ -344,7 +345,8 @@ int put(const struct Client *c, const char *key, uint32_t key_size, const char *
 	if (strcmp(c->protocol, "ABD") == 0) {
 		string _key = string(key);
 		string _value = string(value);
-		_value.pop_back(); // avoid the extra newline character
+		while (_value.length() > 1024)
+			_value.pop_back(); // avoid the extra newline character
 
 		int highestTag = getTagFromMajorityAsync(channels, c);
 		writeToServersAsync(channels, _key, _value, c->id, highestTag + 1);

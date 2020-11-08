@@ -134,6 +134,7 @@ namespace Thread_helper{
 
 			if (time_elapsed < 1000) {
 				uint32_t timetosleep = 1000 - time_elapsed;
+				// std::cout << timetosleep << std::endl;
 				std::this_thread::sleep_for(std::chrono::milliseconds(timetosleep));
 			}
 		}
