@@ -19,8 +19,8 @@ obj1 = $(filter-out obj/server.o, $(obj)) # Object files for userprogram applica
 .PHONY: all
 all: obj Client Server
 
-client : obj Client
-Client: kvmsg.pb.o kvmsg.grpc.pb.o $(obj1)
+client : obj userprogram
+userprogram: kvmsg.pb.o kvmsg.grpc.pb.o $(obj1)
 	$(CXX) -o $@ $^ $(LDFLAGS) # Link object files and create the client application
 
 server: obj Server
