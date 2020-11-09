@@ -24,24 +24,19 @@ clock_t  clock_init;
 
 typedef unsigned int uint;
 
-#define NUMBER_OF_CLIENTS 	10
-#define NUM_READS 			5
+#define NUMBER_OF_CLIENTS 	3
+#define NUM_READS 		1
 #define SIZE_OF_VALUE 		1024
 
 std::string TYPES[2] = {"invoke", "ok"};
 std::string OPS[2] = {"write", "read"};
 std::string NIL = "nil";
 static struct Server_info servers[] = {
-				       {"127.0.0.1", 10000},
-		{"127.0.0.1", 10001},
-		{"127.0.0.1", 10002},
-		{"127.0.0.1", 10003},
-		{"127.0.0.1", 10004},
-		{"127.0.0.1", 10005},
-		{"127.0.0.1", 10006},
-		{"127.0.0.1", 10007},
-		{"127.0.0.1", 10008},
-		{"127.0.0.1", 10009}};
+				       {"34.73.199.224", 50051},
+					{"35.237.185.23", 50051},
+					 {"35.196.92.36", 50051},
+					  {"34.70.233.73", 50051},
+				       {"34.94.180.241", 50051}};
 
 static char key[] = "123456"; // We only have one key in this userprogram
 
