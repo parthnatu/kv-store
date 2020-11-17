@@ -17,10 +17,10 @@ obj2 = $(filter-out obj/userprogram.o,  $(obj)) # Object files required for the 
 obj1 = $(filter-out obj/server.o, $(obj)) # Object files for userprogram application. Please note that Client application created by this Makefile will be the one that runs the main function in the userprogram object file
 
 .PHONY: all
-all: obj Client Server
+all: obj userprogram Server
 
-client : obj Client
-Client: kvmsg.pb.o kvmsg.grpc.pb.o $(obj1)
+client : obj userprogram
+userprogram: kvmsg.pb.o kvmsg.grpc.pb.o $(obj1)
 	$(CXX) -o $@ $^ $(LDFLAGS) # Link object files and create the client application
 
 server: obj Server
@@ -44,4 +44,4 @@ $(obj): obj/%.o: %.cpp
 
 .PHONY: clean
 clean:
-	rm -rf *.o *.pb.cc *.pb.h obj Client Server
+	rm -rf *.o *.pb.cc *.pb.h obj userprogram Server
