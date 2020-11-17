@@ -93,7 +93,6 @@ class KVServerImpl final : public KVStore::Service {
 
     if(prot == "CM"){
       mtx.lock();
-      cout << "running read got lock too woohoo\n";
       reply->set_value(cm_store[request->key()]);
       mtx.unlock();
     }
@@ -105,7 +104,7 @@ class KVServerImpl final : public KVStore::Service {
                   WriteReply* reply) override {
     if(prot == "CM"){
       mtx.lock();
-      cout << "running write from client " << request->client_id() << "got lock too woohoo\n";
+
       uint32_t client_id = (uint32_t) request->client_id();
       ts_cm[client_id] += 1;
       string key = (string) request->key();
@@ -240,7 +239,6 @@ class CMImpl final : public CM::Service {
   Status receive(ServerContext* context, const CMRecRequest* request,
                   CMRecReply* reply) override {
     mtx.lock();
-    cout << "running rec got lock too woohoo\n";
     CMTuple* tup = new CMTuple();
     tup->id = (uint32_t)request->id();
     vector<int> timestamp;
@@ -302,13 +300,10 @@ public:
 void send(){
   while(true){
     mtx.lock();
-    //cout<<"got lock running send\n";
     if(!outqueue.empty()){
-      //mtx.unlock();
       
       for(uint32_t i=0;i<cm_N;i++){
 	if(i != cm_self_index){
-	  cout<<"got lock running send\n";
 	  string target_str = server_info[i].first + ":" + server_info[i].second;
 	  CMClientImpl recv_call(grpc::CreateChannel(
       target_str, grpc::InsecureChannelCredentials()));
@@ -329,9 +324,8 @@ void send(){
 void apply(){
   while(true){
     mtx.lock();
-    //cout<<"got lock running apply\n";
     if(!inqueue.empty()){
-      cout<<"got lock running apply\n";
+
       CMTuple* tup = inqueue.front();
      
       bool flag = true;
@@ -346,7 +340,6 @@ void apply(){
 	}
       }
       if(flag && tup->timestamp[tup->id] == ts_cm[tup->id] + 1){
-	//cout<<"got lock running apply\n";
 	inqueue.pop();
 	ts_cm[tup->id] = tup->timestamp[tup->id];
 	cm_store[tup->key] = tup->value;
@@ -432,7 +425,6 @@ int main(int argc, char *argv[]){
       index++;
       server_info.push_back(pair<string,string>(_ip,_port));
     }
-    cout << "this is server number : " << cm_self_index << "\n";
     cm_N = index;
   }
   serverAddress = serverAddress+":"+port;

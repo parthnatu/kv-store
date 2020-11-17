@@ -429,12 +429,12 @@ int get(const struct Client *c, const char *key, uint32_t key_size, char **value
   vector<KVServerChannel*> channels = getKVServerChannelsAsync(c);
   if(strcmp(c->protocol,"CM") == 0 ){
 	  std::string serverIP = string(c->servers[c->id].ip)+":"+to_string(c->servers[c->id].port);
-	  cout << "on " << serverIP << "\n";
+
 	  KVClient cmclient = KVClient(
 		 grpc::CreateChannel(serverIP, grpc::InsecureChannelCredentials())
 	  );
 	  string _value = cmclient.read(string(key),c->id,c->protocol);
-	  cout << "got value : " << _value << "\n";
+
 	  *value_size = _value.length();
 	  *value = new char[*value_size];
 	  _value.copy(*value, *value_size);
