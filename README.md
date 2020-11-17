@@ -2,7 +2,7 @@
 
 ## How to run the client and server
 
-Please export the apporpriate PATH and PKG_CONFIG_PATH for your environment before running `make`.
+Please export the appropriate PATH and PKG_CONFIG_PATH for your environment before running `make`.
 
 Once the binaries for `Server` and `userprogram` are created follow the steps below
 
@@ -12,7 +12,7 @@ Once the binaries for `Server` and `userprogram` are created follow the steps be
 
 For any R/W ratio changes and server configuration changes, use userprogram.cpp.
 
-`R/W ratio = NUM_READS/NUMBER_OF_CLIENTS`
+`R/(R/W) ratio = NUM_READS/NUMBER_OF_CLIENTS`
 
 Note for CM: The client refers to its own local server using its index in the `servers[]` array in userprogram.cpp. For example, if there are 5 entries in the array and there are 3 clients, client1 will refer to the 0th index, client2 to the 1st index, client3 to the 2nd index and the rest of the servers are global servers.
 
