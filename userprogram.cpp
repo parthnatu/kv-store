@@ -25,7 +25,7 @@ clock_t  clock_init;
 typedef unsigned int uint;
 
 #define NUMBER_OF_CLIENTS 	3
-#define NUM_READS 		1
+#define NUM_READS 		3
 #define SIZE_OF_VALUE 		1024
 
 std::string TYPES[2] = {"invoke", "ok"};
@@ -34,9 +34,11 @@ std::string NIL = "nil";
 static struct Server_info servers[] = {
 				       {"34.73.199.224", 50051},
 					{"35.237.185.23", 50051},
-					 {"35.196.92.36", 50051},
-					  {"34.70.233.73", 50051},
-				       {"34.94.180.241", 50051}};
+				       {"35.196.92.36", 50051}};
+				       //{"35.243.236.125", 50051},
+				       //{"34.74.104.160", 50051},
+				       //{"34.70.233.73", 50051},
+				       //{"34.94.180.241", 50051}};
 
 static char key[] = "123456"; // We only have one key in this userprogram
 
@@ -59,10 +61,10 @@ namespace Thread_helper{
 		out << time_elapsed << "\t" << log_string(c->id, TYPES[0], OPS[0], _value);
 
 		int status = put(c, key, key_size, value, value_size);
-
+		float latency  = (float)(clock() - clock_curr)/CLOCKS_PER_SEC;
 		clock_curr = clock();
 		time_elapsed = (float)(clock_curr - clock_init)/ CLOCKS_PER_SEC;
-		out << time_elapsed << "\t" << log_string(c->id, TYPES[1], OPS[0], _value);
+		out << latency << "\t" << time_elapsed << "\t" << log_string(c->id, TYPES[1], OPS[0], _value);
 
 		if(status == 0){ // Success
 			return;
@@ -82,12 +84,12 @@ namespace Thread_helper{
 		out << time_elapsed << "\t" << log_string(c->id, TYPES[0], OPS[1], NIL);
 
 		int status = get(c, key, key_size, value, value_size);
-
+		float latency  = (float)(clock() - clock_curr)/CLOCKS_PER_SEC;
 		std::string valueStr = *value;
 
 		clock_curr = clock();
 		time_elapsed = (float)(clock_curr - clock_init)/ CLOCKS_PER_SEC;
-		out << time_elapsed << "\t" << log_string(c->id, TYPES[1], OPS[1], valueStr);
+		out << latency << "\t"<< time_elapsed << "\t" << log_string(c->id, TYPES[1], OPS[1], valueStr);
 
 		if(status == 0){ // Success
 			return;
