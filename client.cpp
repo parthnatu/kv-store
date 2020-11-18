@@ -335,7 +335,8 @@ bool writeToServersAsync(vector<KVServerChannel*> &channels, const string &key, 
 	return true;
 }
 
-string readFromServersAsync(vector<KVServerChannel*> &channels, const string &key, const uint32_t client_id) {
+string readFromServersAsync(vector<KVServerChannel*> &channels, const string &key, 
+			const uint32_t client_id, const uint32_t timestamp) {
 	int n_channels = (int)channels.size();
 
 	queue<std::promise<valueWithTag>> promises;
@@ -381,8 +382,11 @@ string readFromServersAsync(vector<KVServerChannel*> &channels, const string &ke
 		n_got++;
 	}
 
+	writeToServersAsync(channels, key, value, client_id, timestamp + 1);
+
 	return value;
 }
+
 struct Client* client_instance(const uint32_t id, const char *protocol, const struct Server_info *servers, uint32_t number_of_servers)
 {
 	Client *client = new Client();
@@ -440,7 +444,8 @@ int get(const struct Client *c, const char *key, uint32_t key_size, char **value
 	  _value.copy(*value, *value_size);
   }
   else{
-  	string valueStr = readFromServersAsync(channels, string(key), c->id);
+  	int highestTag = getTagFromMajorityAsync(channels, c);
+  	string valueStr = readFromServersAsync(channels, string(key), c->id, highestTag);
 	*value_size = valueStr.length();
 	*value = new char[*value_size];
 	valueStr.copy(*value, *value_size);
